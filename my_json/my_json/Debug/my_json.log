@@ -1,0 +1,15 @@
+﻿  test.c
+e:\vs2017\my_json\my_json\test.c(129): warning C4013: “lept_get_string”未定义；假设外部返回 int
+e:\vs2017\my_json\my_json\test.c(129): warning C4047: “函数”:“const char *”与“int”的间接级别不同
+e:\vs2017\my_json\my_json\test.c(129): warning C4024: “strcmp”: 形参和实参 2 的类型不同
+e:\vs2017\my_json\my_json\test.c(130): warning C4047: “函数”:“const char *”与“int”的间接级别不同
+e:\vs2017\my_json\my_json\test.c(130): warning C4024: “strcmp”: 形参和实参 2 的类型不同
+e:\vs2017\my_json\my_json\test.c(131): warning C4047: “函数”:“const char *”与“int”的间接级别不同
+e:\vs2017\my_json\my_json\test.c(131): warning C4024: “strcmp”: 形参和实参 2 的类型不同
+e:\vs2017\my_json\my_json\test.c(132): warning C4047: “函数”:“const char *”与“int”的间接级别不同
+e:\vs2017\my_json\my_json\test.c(132): warning C4024: “strcmp”: 形参和实参 2 的类型不同
+e:\vs2017\my_json\my_json\test.c(129): warning C4477: “fprintf”: 格式字符串“%s”需要类型“char *”的参数，但可变参数 4 拥有了类型“int”
+e:\vs2017\my_json\my_json\test.c(130): warning C4477: “fprintf”: 格式字符串“%s”需要类型“char *”的参数，但可变参数 4 拥有了类型“int”
+e:\vs2017\my_json\my_json\test.c(131): warning C4477: “fprintf”: 格式字符串“%s”需要类型“char *”的参数，但可变参数 4 拥有了类型“int”
+e:\vs2017\my_json\my_json\test.c(132): warning C4477: “fprintf”: 格式字符串“%s”需要类型“char *”的参数，但可变参数 4 拥有了类型“int”
+  my_json.vcxproj -> E:\VS2017\my_json\my_json\Debug\my_json.exe
