@@ -27,6 +27,8 @@ static int test_pass = 0;
 
 #define EXPECT_EQ_STRING(expect, actual) EXPECT_EQ_BASE(!strcmp((expect), (actual)), expect, actual, "%s")
 
+#define EXPECT_EQ_LOGIC(expect, actual) EXPECT_EQ_BASE((expect)==(actual), expect, actual, "%d")
+
 #define TEST_ERROR(error, json, type)\
     do{\
         lept_value v;\
@@ -50,6 +52,39 @@ static int test_pass = 0;
 		EXPECT_EQ_STRING(expect, lept_get_string(&v));\
 	}while(0)
 
+#define lept_init(v) do { (v)->type = LEPT_NULL; } while(0)
+
+static void test_parse();
+static void test_parse_null();
+static void test_parse_true();
+static void test_parse_false();
+static void test_parse_expect_value();
+static void test_parse_invalid_value();
+static void test_parse_root_not_singular();
+static void test_parse_number();
+static void test_parse_string();
+static void test_access_boolean();
+static void test_access_number();
+static void test_access_string();
+
+int main() {
+    test_parse();
+    printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);
+	getchar();
+    return main_ret;
+}
+
+static void test_parse() {
+	test_parse_null();
+	test_parse_true();
+	test_parse_false();
+	test_parse_expect_value();
+	test_parse_invalid_value();
+	test_parse_root_not_singular();
+	test_parse_number();
+	test_parse_string();
+}
+
 static void test_parse_null() {
 	TEST_ERROR(LEPT_PARSE_OK, "null", LEPT_NULL);
 }
@@ -60,7 +95,7 @@ static void test_parse_true() {
 
 static void test_parse_false() {
 	TEST_ERROR(LEPT_PARSE_OK, "  false   ", LEPT_FALSE);
-} 
+}
 
 static void test_parse_expect_value() {
 	TEST_ERROR(LEPT_PARSE_EXPECT_VALUE, "", LEPT_NULL);
@@ -109,7 +144,7 @@ static void test_parse_number() {
 	TEST_NUMBER(1.234E-10, "1.234E-10");
 	TEST_NUMBER(0.0, "1e-10000"); /* must underflow */
 
-	/* the smallest number > 1 */
+								  /* the smallest number > 1 */
 	TEST_NUMBER(1.0000000000000002, "1.0000000000000002");
 	/* minimum denormal */
 	TEST_NUMBER(4.9406564584124654e-324, "4.9406564584124654e-324");
@@ -132,20 +167,32 @@ static void test_parse_string() {
 	TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
 }
 
-static void test_parse() {
-    test_parse_null();
-	test_parse_true();
-	test_parse_false();
-    test_parse_expect_value();
-    test_parse_invalid_value();
-    test_parse_root_not_singular();
-	test_parse_number();
-	test_parse_string();
+static void test_access_boolean() {
+	lept_value v;
+	lept_init(&v);
+	lept_set_string(&v, "a", 1);
+	lept_set_boolean(&v, 1);
+	EXPECT_EQ_LOGIC(lept_get_boolean(&v), 1);
+	lept_set_boolean(&v, 0);
+	EXPECT_EQ_LOGIC(lept_get_boolean(&v), 0);
+	lept_free(&v);
 }
 
-int main() {
-    test_parse();
-    printf("%d/%d (%3.2f%%) passed\n", test_pass, test_count, test_pass * 100.0 / test_count);
-	getchar();
-    return main_ret;
+static void test_access_number() {
+	lept_value v;
+	lept_init(&v);
+	lept_set_string(&v, "a", 1);
+	lept_set_number(&v, 1234.5);
+	EXPECT_EQ_DOUBLE(1234.5, lept_get_number(&v));
+	lept_free(&v);
+}
+
+static void test_access_string() {
+	lept_value v;
+	lept_init(&v);
+	lept_set_string(&v, "", 0);
+	EXPECT_EQ_STRING("", lept_get_string(&v), lept_get_string_length(&v));
+	lept_set_string(&v, "Hello", 5);
+	EXPECT_EQ_STRING("Hello", lept_get_string(&v), lept_get_string_length(&v));
+	lept_free(&v);
 }

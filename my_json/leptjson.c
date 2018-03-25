@@ -7,18 +7,23 @@
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
+#define lept_set_null(v) lept_free(v)
+#define LEPT_PARSE_STACK_INIT_SIZE 256
 
 typedef struct {
-    const char* json;
+	const char* json;
+	char* stack;
+	size_t size, top;
 }lept_context;
 
 static void lept_parse_whitespace(lept_context *);
 static int lept_parse_value(lept_context *, lept_value *);
 static int lept_parse_test(lept_context *, lept_value *, char *, int);
 static int lept_parse_string(lept_context *, lept_value *);
-static void lept_set_string(lept_value *, const char *, const size_t);
 static void lept_free(lept_value *);
 static int lept_parse_number(lept_context *, lept_value *);
+static void *stack_push(lept_context *, size_t);
+static void* stack_pop(lept_context*, size_t);
 
 lept_type lept_get_type(const lept_value* v) {
 	assert(v != NULL);
@@ -40,7 +45,10 @@ int lept_parse(lept_value *v, const char* json) {
 	int return_v;
 	assert(v != NULL);  //assert 的作用是现计算表达式 expression ，如果其值为假（即为 0），那么它先向 stderr 打印一条出错信息，然后通过调用 abort 来终止程序运行
 	c.json = json;      // &c 似乎不等于 &c.json
-	v->type = LEPT_NULL;
+	c.stack = NULL;
+	c.size = 0;
+	c.top = 0;
+	lept_init(&v);
 	lept_parse_whitespace(&c);
 	return_v = lept_parse_value(&c, v);
 	lept_parse_whitespace(&c);
@@ -49,7 +57,9 @@ int lept_parse(lept_value *v, const char* json) {
 		v->type = LEPT_NULL;
 		return LEPT_PARSE_ROOT_NOT_SINGULAR;
 	}
-	else return return_v;
+	assert(c.top == 0);
+	free(c.stack);
+	return return_v;
 }
 
 static void lept_parse_whitespace(lept_context *c) {
@@ -115,15 +125,6 @@ static int lept_parse_string(lept_context *c, lept_value *v) {
 	}
 }
 
-static void lept_set_string(lept_value *v, const char *s, const size_t len) {
-	assert(v != NULL && (s != NULL || len == 0));
-	//lept_free(v);
-	v->u.s.s = (char *)malloc(len + 1);
-	memcpy(v->u.s.s, s, len);
-	v->u.s.s[len] = '\0';
-	v->u.s.len = len;
-}
-
 static void lept_free(lept_value *v) {
 	assert(v != NULL);
 	if (v->type == LEPT_STRING) {
@@ -172,4 +173,78 @@ static int lept_parse_number(lept_context *c, lept_value *v) {
 	c->json = end;
 	v->type = LEPT_NUMBER;
 	return LEPT_PARSE_OK;
+}
+
+void lept_free(lept_value *v) {
+	assert(v != NULL);
+	if (v->type == LEPT_STRING)
+		free(v->u.s.s);
+	v->type = LEPT_NULL;
+}
+
+int lept_get_boolean(const lept_value *v) {
+	assert(v->type == LEPT_FALSE || v->type == LEPT_TRUE);
+	if (v->type == LEPT_TRUE)
+		return 1;
+	else return 0;
+}
+
+void lept_set_boolean(lept_value *v, int c) {
+	assert(v != NULL && (c == 1 || c== 0));
+	if(c == 1)
+	  v->type = LEPT_TRUE;
+	else v->type = LEPT_FALSE;
+}
+
+double lept_get_number(const lept_value* v) {
+	assert(v->type == LEPT_NUMBER);
+	return v->u.n;
+}
+
+void lept_set_number(lept_value *v, const double c) {
+	assert(v != NULL);
+	v->type = LEPT_NUMBER;
+	v->u.n = c;
+}
+
+const char* lept_get_string(const lept_value *v) {
+	assert(v->type == LEPT_STRING);
+	return v->u.s.s;
+}
+
+size_t lept_get_string_length(const lept_value *v) {
+	assert(v->type == LEPT_STRING);
+	return v->u.s.len;
+}
+
+void lept_set_string(lept_value *v, const char *c, const size_t len) {
+	assert(v != NULL && (c != NULL || len == 0));
+	lept_free(v);
+	v->type = LEPT_STRING;
+	v->u.s.len = len;
+	v->u.s.s = (char *)malloc(len + 1);
+	memcpy(v->u.s.s, c, len);
+	v->u.s.s[len] = '\0';
+}
+
+static void *stack_push(lept_context *c, size_t size) {
+	void *p;
+	assert(size > 0);
+	if (c->top + size >= c->size) {
+		if (c->size == 0)
+			c->size == LEPT_PARSE_STACK_INIT_SIZE;
+		while (c->top + size >= c->size) {
+			c->size += c->size >> 1;  /* c->size * 1.5 */
+		c->stack = (char*)realloc(c->stack, c->size);
+		}
+		
+	}
+	p = c->stack + c->top;
+	c->top += size;
+	return p;
+}
+
+static void* stack_pop(lept_context* c, size_t size) {
+	assert(c->top >= size);
+	return c->stack + (c->top -= size);
 }

@@ -31,9 +31,15 @@ enum {
 };
 
 int lept_parse(const lept_value *v, const char* json);
-
 lept_type lept_get_type(const lept_value *v);
-
 double lept_get_number(const lept_value *v);
+void lept_free(lept_value *);
+int lept_get_boolean(const lept_value *);
+void lept_set_boolean(lept_value *, int);
+double lept_get_number(const lept_value *);
+void lept_set_number(lept_value *, const double);
+const char* lept_get_string(const lept_value *);
+size_t lept_get_string_length(const lept_value *);
+void lept_set_string(lept_value *, const char *, const size_t);
 
 #endif /* LEPTJSON_H__ */
