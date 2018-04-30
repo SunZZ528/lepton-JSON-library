@@ -1,4 +1,10 @@
-﻿#include "leptjson.h"
+﻿#define _WINDOWS
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
+
+#include "leptjson.h"
 #include <assert.h>  /* assert */
 #include <stdlib.h>  /* NULL strtod() */
 #include <errno.h>   /* errno, ERANGE */
@@ -18,6 +24,8 @@ static int lept_parse_literal(lept_context *, lept_value *, const char *, const 
 static void *lept_context_push(lept_context *, size_t);
 static void *lept_context_pop(lept_context *, size_t);
 static int lept_parse_string(lept_context *, lept_value *);
+static char *lept_parse_hex4(char *, unsigned *);
+static int lept_encode_utf8(lept_context *, const unsigned);
 
 #define EXPECT(c, ch) \
 	do { \
@@ -29,11 +37,25 @@ static int lept_parse_string(lept_context *, lept_value *);
 
 #define ISDIGIT1_9(ch) ( (ch) >= '1' && (ch) <= '9')
 
+#define ISHEX(ch) (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') || ((ch) >= 'A' && (ch) <= 'F'))
+
 #ifndef LEPT_PARSE_STACK_INIT_SIZE
 #define LEPT_PARSE_STACK_INIT_SIZE 256
 #endif
 
-#define PUTC(c, ch) do { *(char*)lept_context_push(c, sizeof(char)) = (ch); } while(0)
+#define PUTC(c, ch) \
+	do {  \
+		* (char *)lept_context_push(c, sizeof(char)) = (ch); \
+} while(0)
+// 这段理解了很久,假设lept_context_push返回一个char指针p, 再另*p = ch
+/*void PUTC(lept_context *c, char ch) {
+//	*(char *)lept_context_push(c, sizeof(char)) = (ch);
+	char *ret;
+	ret = lept_context_push(c, sizeof(char));
+	*ret = ch;
+}*/
+
+#define STRING_ERROR(ret) do { c->top = head; return ret; } while(0)
 
 int lept_get_type(const lept_value *v) {
 	assert(v != NULL);
@@ -157,9 +179,8 @@ void lept_free(lept_value *v) {
 
 void lept_set_boolean(lept_value *v, int num) {
 	assert(v != NULL);
-	if (num == 0)
-		v->type = LEPT_FALSE;
-	else v->type = LEPT_TRUE;
+	lept_free(v);
+	v->type = num ? LEPT_TRUE : LEPT_FALSE;
 }
 
 int lept_get_boolean(const lept_value *v) {
@@ -171,6 +192,7 @@ int lept_get_boolean(const lept_value *v) {
 
 void lept_set_double(lept_value *v, double num) {
 	assert(v != NULL );
+	lept_free(v);
 	v->type = LEPT_NUMBER;
 	v->u.n = num;
 }
@@ -216,6 +238,7 @@ static void *lept_context_pop(lept_context *c, size_t size) {
 static int lept_parse_string(lept_context *c, lept_value *v) {
 	size_t head = c->top, len;
 	const char *p;
+	unsigned u, u_low;
 	EXPECT(c, '\"');
 	p = c->json;
 	while (1) {
@@ -227,8 +250,7 @@ static int lept_parse_string(lept_context *c, lept_value *v) {
 				c->json = p;
 				return LEPT_PARSE_OK;
 			case '\0':
-				c->top = head;
-				return LEPT_PARSE_MISS_QUOTATION_MARK;
+				STRING_ERROR(LEPT_PARSE_MISS_QUOTATION_MARK);
 			case '\\':
 				switch (*p++) {
 					case '\"': PUTC(c, '\"'); break;
@@ -239,22 +261,87 @@ static int lept_parse_string(lept_context *c, lept_value *v) {
 					case 'n':  PUTC(c, '\n'); break;
 					case 'r':  PUTC(c, '\r'); break;
 					case 't':  PUTC(c, '\t'); break;
+					case 'u':  
+						if(!(p = lept_parse_hex4(p, &u)))
+							STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+						if (u >= 0xD800 && u <= 0xD8FF) {
+							if (*p++ != '\\')
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							if(*p++ != 'u')
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							if (!(p = lept_parse_hex4(p, &u_low)))
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+							if (u_low < 0xDC00 || u_low > 0xDFFF)
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							u = 0x10000 + (u - 0xD800) * 0x400 + (u_low - 0xDC00);
+						}
+						lept_encode_utf8(c, u);
+						break;
 					default: 
-						c->top = head;
-						return LEPT_PARSE_INVALID_STRING_ESCAPE;
+						STRING_ERROR(LEPT_PARSE_INVALID_STRING_ESCAPE);
 				}
 				break;
 			default:
 				if ((unsigned char)ch < 0x20) {
-					c->top = head;
-					return LEPT_PARSE_INVALID_STRING_CHAR;
+					STRING_ERROR(LEPT_PARSE_INVALID_STRING_CHAR);
 				}
 				PUTC(c, ch);
 		}
 	}
 }
 
+int lept_encode_utf8(lept_context *c, const unsigned u) {
+	if (u >= 0x0000 && u <= 0x007F) {
+		PUTC(c, u & 0x007F);
+	}
+	else  if (u >= 0x0080 && u <= 0x07FF) {
+		PUTC(c, 0xC0 | ((u >> 6) & 0x001F));
+		PUTC(c, 0x80 | (u & 0x003F));
+	}
+	else if (u >= 0x0800 && u <= 0xFFFF) {
+		PUTC(c, 0xE0 | ((u >> 12) & 0x000F));
+		PUTC(c, 0x80 | ((u >> 6) & 0x003F));
+		PUTC(c, 0x80 | (u & 0x003F));
+	}
+	else if (u >= 0x10000 && u <= 0x10FFFF) {
+		PUTC(c, 0xF0 | ((u >> 18) & 0xFF));
+		PUTC(c, 0x80 | ((u >> 12) & 0x3F));
+		PUTC(c, 0x80 | ((u >> 6) & 0x3F));
+		PUTC(c, 0x80 | (u & 0x3F));
+	}
+	else return LEPT_PARSE_INVALID_UNICODE_SURROGATE;
+	//else if(*u >= 0x10000 && *u <= 0x10FFFF)
+	return LEPT_PARSE_OK;
+}
+
+char *lept_parse_hex4(char *p, unsigned *u) {
+	size_t i;
+	*u = 0x00;
+	for (i = 0; i < 4; i++) {
+		if (!(ISHEX(*(p + i)))) {
+			return NULL;
+		}
+		else {
+			*u = *u << 4;
+			//*u += (*(p + i) - '0' >= 10) ? (*(p + i) - 'A' + 10) : (*(p + i) - '0');
+			if (*(p + i) >= '0' && *(p + i) <= '9')  *u += *(p + i) - '0';
+			else if (*(p + i) >= 'A' && *(p + i) <= 'F')  *u += *(p + i) - ('A' - 10);
+			else if (*(p + i) >= 'a' && *(p + i) <= 'f')  *u += *(p + i) - ('a' - 10);
+/* 如果使用strtol
+static const char* lept_parse_hex4(const char* p, unsigned* u) {
+    char* end;
+    *u = (unsigned)strtol(p, &end, 16);
+    return end == p + 4 ? end : NULL;
+}
+但这个实现会错误地接受 "\u 123" 这种不合法的 JSON，
+因为 strtol() 会跳过开始的空白。要解决的话，还需要检测第一个字符是否 [0-9A-Fa-f]，或者 !isspace(*p)*/
+		}
+	}
+	return p += 4;
+}
+
 void lept_set_null(lept_value *v) {
 	assert(v != NULL);
+	lept_free(v);
 	v->type = LEPT_NULL;
 }

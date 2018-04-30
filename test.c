@@ -1,4 +1,10 @@
-﻿#include <stdio.h>
+﻿#define _WINDOWS
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "leptjson.h"
@@ -247,6 +253,12 @@ static void test_parse_string() {
 	EXPECT_TEST_STRING("Hello", "\"Hello\"");
 	EXPECT_TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
 	EXPECT_TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+	EXPECT_TEST_STRING("Hello\0World", "\"Hello\\u0000World\"");
+	EXPECT_TEST_STRING("\x24", "\"\\u0024\"");         /* Dollar sign U+0024 */
+	EXPECT_TEST_STRING("\xC2\xA2", "\"\\u00A2\"");     /* Cents sign U+00A2 */
+	EXPECT_TEST_STRING("\xE2\x82\xAC", "\"\\u20AC\""); /* Euro sign U+20AC */
+	EXPECT_TEST_STRING("\xF0\x9D\x84\x9E", "\"\\uD834\\uDD1E\"");  /* G clef sign U+1D11E */
+	EXPECT_TEST_STRING("\xF0\x9D\x84\x9E", "\"\\ud834\\udd1e\"");  /* G clef sign U+1D11E */
 }
 
 static void test_parse_missing_quotation_mark() {
@@ -266,6 +278,9 @@ static void test_parse_invalid_string_char() {
 	EXPECT_TEST_ERROR(LEPT_PARSE_INVALID_STRING_CHAR, "\"\x1F\"", LEPT_VOID);
 }
 int main() {
+#ifdef _WINDOWS
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 	test_parse();
 	printf("%d/%d (%3.2f%%) passed!\n", test_pass, test_count, test_pass * 100.0 / test_count);
 	getchar();
