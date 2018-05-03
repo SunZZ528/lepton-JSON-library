@@ -26,7 +26,10 @@ static void *lept_context_pop(lept_context *, size_t);
 static int lept_parse_string(lept_context *, lept_value *);
 static char *lept_parse_hex4(char *, unsigned *);
 static int lept_encode_utf8(lept_context *, const unsigned);
+<<<<<<< HEAD
 static int lept_parse_array(lept_context *, lept_value *);
+=======
+>>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
 
 #define EXPECT(c, ch) \
 	do { \
@@ -249,7 +252,11 @@ static void *lept_context_pop(lept_context *c, size_t size) {
 
 static int lept_parse_string(lept_context *c, lept_value *v) {
 	size_t head = c->top, len;
+<<<<<<< HEAD
 	char *p;
+=======
+	const char *p;
+>>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
 	unsigned u, u_low;
 	EXPECT(c, '\"');
 	p = c->json;
@@ -326,6 +333,7 @@ int lept_encode_utf8(lept_context *c, const unsigned u) {
 	return LEPT_PARSE_OK;
 }
 
+<<<<<<< HEAD
 size_t lept_get_array_size(const lept_value *v) {
 	assert(v != NULL && v->type == LEPT_ARRAY);
 	return v->u.arr.size;
@@ -337,6 +345,8 @@ lept_value * lept_get_array_element(const lept_value *v, size_t n) {
 	return &v->u.arr.e[n];
 }
 
+=======
+>>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
 char *lept_parse_hex4(char *p, unsigned *u) {
 	size_t i;
 	*u = 0x00;
