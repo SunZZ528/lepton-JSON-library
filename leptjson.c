@@ -1,4 +1,10 @@
-﻿#include "leptjson.h"
+﻿#define _WINDOWS
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
+
+#include "leptjson.h"
 #include <assert.h>  /* assert */
 #include <stdlib.h>  /* NULL strtod() */
 #include <errno.h>   /* errno, ERANGE */
@@ -7,7 +13,7 @@
 
 typedef struct {
 	const char *json;
-	char *stack;
+	void *stack;
 	size_t size, top;
 }lept_context;
 
@@ -18,6 +24,9 @@ static int lept_parse_literal(lept_context *, lept_value *, const char *, const 
 static void *lept_context_push(lept_context *, size_t);
 static void *lept_context_pop(lept_context *, size_t);
 static int lept_parse_string(lept_context *, lept_value *);
+static char *lept_parse_hex4(char *, unsigned *);
+static int lept_encode_utf8(lept_context *, const unsigned);
+static int lept_parse_array(lept_context *, lept_value *);
 
 #define EXPECT(c, ch) \
 	do { \
@@ -29,18 +38,32 @@ static int lept_parse_string(lept_context *, lept_value *);
 
 #define ISDIGIT1_9(ch) ( (ch) >= '1' && (ch) <= '9')
 
+#define ISHEX(ch) (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') || ((ch) >= 'A' && (ch) <= 'F'))
+
 #ifndef LEPT_PARSE_STACK_INIT_SIZE
 #define LEPT_PARSE_STACK_INIT_SIZE 256
 #endif
 
-#define PUTC(c, ch) do { *(char*)lept_context_push(c, sizeof(char)) = (ch); } while(0)
+#define PUTC(c, ch) \
+	do {  \
+		* (char *)lept_context_push(c, sizeof(char)) = (ch); \
+} while(0)
+// 这段理解了很久,假设lept_context_push返回一个char指针p, 再另*p = ch
+/*void PUTC(lept_context *c, char ch) {
+//	*(char *)lept_context_push(c, sizeof(char)) = (ch);
+	char *ret;
+	ret = lept_context_push(c, sizeof(char));
+	*ret = ch;
+}*/
+
+#define STRING_ERROR(ret) do { c->top = head; return ret; } while(0)
 
 int lept_get_type(const lept_value *v) {
 	assert(v != NULL);
 	return v->type;
 }
 
-int lept_parse(lept_value *v, const char *json) {
+int lept_parse(lept_value *v, char *json) {
 	lept_context c;
 	int ret = 0;
 	assert(v != NULL);
@@ -69,6 +92,7 @@ static int lept_parse_value(lept_context *c, lept_value *v) {
 		case 'f': return lept_parse_literal(c, v, "false", LEPT_FALSE);
 		case '\0': return LEPT_PARSE_EXPECT_VALUE;
 		case '\"': return lept_parse_string(c, v);
+		case '[': return lept_parse_array(c, v);
 		default: return lept_parse_number(c, v);
 	}
 }
@@ -150,16 +174,25 @@ void lept_set_string(lept_value *v, const char *s, size_t len) {
 
 void lept_free(lept_value *v) {
 	assert(v != NULL);
-	if (v->type == LEPT_STRING) 
-		free(v->u.s.s);
+	size_t i;
+	switch (v->type) {
+		case LEPT_STRING:
+			free(v->u.s.s);
+			break;
+		case LEPT_ARRAY:
+			for (i = 0; i < v->u.arr.size; i++)
+				lept_free(&v->u.arr.e[i]);
+			free(v->u.arr.e);
+			break;
+		default: break;
+	}
 	v->type = LEPT_VOID;
 }
 
 void lept_set_boolean(lept_value *v, int num) {
 	assert(v != NULL);
-	if (num == 0)
-		v->type = LEPT_FALSE;
-	else v->type = LEPT_TRUE;
+	lept_free(v);
+	v->type = num ? LEPT_TRUE : LEPT_FALSE;
 }
 
 int lept_get_boolean(const lept_value *v) {
@@ -171,6 +204,7 @@ int lept_get_boolean(const lept_value *v) {
 
 void lept_set_double(lept_value *v, double num) {
 	assert(v != NULL );
+	lept_free(v);
 	v->type = LEPT_NUMBER;
 	v->u.n = num;
 }
@@ -203,19 +237,20 @@ static void *lept_context_push(lept_context *c, size_t size) {
 		c->stack = (char *)realloc(c->stack, c->size); 
 		// realloc(NULL, size) 的行为是等价于 malloc(size) ,所以我们不需要为第一次分配内存作特别处理。
 	}
-	ret = c->stack + c->top;
+	ret = (char *)c->stack + c->top;
 	c->top += size;
 	return ret;
 }
 
 static void *lept_context_pop(lept_context *c, size_t size) {
 	assert(c->top >= size);
-	return c->stack + (c->top -= size);
+	return (char *)c->stack + (c->top -= size);
 }
 
 static int lept_parse_string(lept_context *c, lept_value *v) {
 	size_t head = c->top, len;
-	const char *p;
+	char *p;
+	unsigned u, u_low;
 	EXPECT(c, '\"');
 	p = c->json;
 	while (1) {
@@ -227,8 +262,7 @@ static int lept_parse_string(lept_context *c, lept_value *v) {
 				c->json = p;
 				return LEPT_PARSE_OK;
 			case '\0':
-				c->top = head;
-				return LEPT_PARSE_MISS_QUOTATION_MARK;
+				STRING_ERROR(LEPT_PARSE_MISS_QUOTATION_MARK);
 			case '\\':
 				switch (*p++) {
 					case '\"': PUTC(c, '\"'); break;
@@ -239,22 +273,161 @@ static int lept_parse_string(lept_context *c, lept_value *v) {
 					case 'n':  PUTC(c, '\n'); break;
 					case 'r':  PUTC(c, '\r'); break;
 					case 't':  PUTC(c, '\t'); break;
+					case 'u':  
+						if(!(p = lept_parse_hex4(p, &u)))
+							STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+						if (u >= 0xD800 && u <= 0xD8FF) {
+							if (*p++ != '\\')
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							if(*p++ != 'u')
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							if (!(p = lept_parse_hex4(p, &u_low)))
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+							if (u_low < 0xDC00 || u_low > 0xDFFF)
+								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+							u = 0x10000 + (u - 0xD800) * 0x400 + (u_low - 0xDC00);
+						}
+						lept_encode_utf8(c, u);
+						break;
 					default: 
-						c->top = head;
-						return LEPT_PARSE_INVALID_STRING_ESCAPE;
+						STRING_ERROR(LEPT_PARSE_INVALID_STRING_ESCAPE);
 				}
 				break;
 			default:
 				if ((unsigned char)ch < 0x20) {
-					c->top = head;
-					return LEPT_PARSE_INVALID_STRING_CHAR;
+					STRING_ERROR(LEPT_PARSE_INVALID_STRING_CHAR);
 				}
 				PUTC(c, ch);
 		}
 	}
 }
 
+int lept_encode_utf8(lept_context *c, const unsigned u) {
+	if (u >= 0x0000 && u <= 0x007F) {
+		PUTC(c, u & 0x007F);
+	}
+	else  if (u >= 0x0080 && u <= 0x07FF) {
+		PUTC(c, 0xC0 | ((u >> 6) & 0x001F));
+		PUTC(c, 0x80 | (u & 0x003F));
+	}
+	else if (u >= 0x0800 && u <= 0xFFFF) {
+		PUTC(c, 0xE0 | ((u >> 12) & 0x000F));
+		PUTC(c, 0x80 | ((u >> 6) & 0x003F));
+		PUTC(c, 0x80 | (u & 0x003F));
+	}
+	else if (u >= 0x10000 && u <= 0x10FFFF) {
+		PUTC(c, 0xF0 | ((u >> 18) & 0xFF));
+		PUTC(c, 0x80 | ((u >> 12) & 0x3F));
+		PUTC(c, 0x80 | ((u >> 6) & 0x3F));
+		PUTC(c, 0x80 | (u & 0x3F));
+	}
+	else return LEPT_PARSE_INVALID_UNICODE_SURROGATE;
+	//else if(*u >= 0x10000 && *u <= 0x10FFFF)
+	return LEPT_PARSE_OK;
+}
+
+size_t lept_get_array_size(const lept_value *v) {
+	assert(v != NULL && v->type == LEPT_ARRAY);
+	return v->u.arr.size;
+}
+
+lept_value * lept_get_array_element(const lept_value *v, size_t n) {
+	assert(v != NULL && v->type == LEPT_ARRAY);
+	assert(n <= v->u.arr.size);
+	return &v->u.arr.e[n];
+}
+
+char *lept_parse_hex4(char *p, unsigned *u) {
+	size_t i;
+	*u = 0x00;
+	for (i = 0; i < 4; i++) {
+		if (!(ISHEX(*(p + i)))) {
+			return NULL;
+		}
+		else {
+			*u = *u << 4;
+			//*u += (*(p + i) - '0' >= 10) ? (*(p + i) - 'A' + 10) : (*(p + i) - '0');
+			if (*(p + i) >= '0' && *(p + i) <= '9')  *u += *(p + i) - '0';
+			else if (*(p + i) >= 'A' && *(p + i) <= 'F')  *u += *(p + i) - ('A' - 10);
+			else if (*(p + i) >= 'a' && *(p + i) <= 'f')  *u += *(p + i) - ('a' - 10);
+/* 如果使用strtol
+static const char* lept_parse_hex4(const char* p, unsigned* u) {
+    char* end;
+    *u = (unsigned)strtol(p, &end, 16);
+    return end == p + 4 ? end : NULL;
+}
+但这个实现会错误地接受 "\u 123" 这种不合法的 JSON，
+因为 strtol() 会跳过开始的空白。要解决的话，还需要检测第一个字符是否 [0-9A-Fa-f]，或者 !isspace(*p)*/
+		}
+	}
+	return p += 4;
+}
+
 void lept_set_null(lept_value *v) {
 	assert(v != NULL);
+	lept_free(v);
 	v->type = LEPT_NULL;
 }
+
+static int lept_parse_array(lept_context *c, lept_value *v) {
+	size_t size = 0, i;
+	int ret;
+	EXPECT(c, '[');
+	lept_parse_whitespace(c);
+	if (*c->json == ']') {
+		c->json++;
+		v->type = LEPT_ARRAY;
+		v->u.arr.size = 0;
+		v->u.arr.e = NULL;
+		return LEPT_PARSE_OK;
+	}
+	while (1) {
+		lept_value e;
+		lept_init(&e);
+		lept_parse_whitespace(c);
+		if (ret = lept_parse_value(c, &e) != LEPT_PARSE_OK)
+			return ret;
+		memcpy(lept_context_push(c, sizeof(lept_value)), &e, sizeof(lept_value));
+		size++;
+		lept_parse_whitespace(c);
+		if (*c->json == ',')
+			c->json++;
+		else if (*c->json == ']') {
+			c->json++;
+			v->type = LEPT_ARRAY;
+			v->u.arr.size = size;
+			size *= sizeof(lept_value);
+			memcpy(v->u.arr.e = (lept_value *)malloc(size), lept_context_pop(c, size), size);
+			return LEPT_PARSE_OK;
+		}
+		else {
+			return LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+			break;
+		}
+	}
+	/* Pop and free values on the stack */
+	for (i = 0; i < size; i++)
+		lept_free((lept_value*)lept_context_pop(c, sizeof(lept_value)));
+	return ret;
+}
+/*
+我们把这个指针调用 lept_parse_value(c, e)，
+这里会出现问题，因为 lept_parse_value() 及之下的函数都需要调用 lept_context_push()，
+而 lept_context_push() 在发现栈满了的时候会用 realloc() 扩容。
+这时候，我们上层的 e 就会失效，变成一个悬挂指针（dangling pointer），
+而且 lept_parse_value(c, e) 会通过这个指针写入解析结果，造成非法访问。
+在使用 C++ 容器时，也会遇到类似的问题。从容器中取得的迭代器（iterator）后，
+如果改动容器内容，之前的迭代器会失效。这里的悬挂指针问题也是相同的。
+
+但这种 bug 有时可能在简单测试中不能自动发现，因为问题只有堆栈满了才会出现。
+从测试的角度看，我们需要一些压力测试（stress test），测试更大更复杂的数据。
+但从编程的角度看，我们要谨慎考虑变量的生命周期，尽量从编程阶段避免出现问题
+
+例如把 lept_context_push() 的 API 改为：
+static void lept_context_push(
+lept_context* c, const void* data, size_t size);
+
+这样就确把数据压入栈内，避免了返回指针的生命周期问题。但我们之后会发现，原来的 API 设计在一些情况会更方便一些，
+例如在把字符串值转化（stringify）为 JSON 时，我们可以预先在堆栈分配字符串所需的最大空间，而当时是未有数据填充进去的。
+无论如何，我们编程时都要考虑清楚变量的生命周期，特别是指针的生命周期。
+*/

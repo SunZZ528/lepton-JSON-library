@@ -14,10 +14,19 @@ enum {
 	LEPT_PARSE_MISS_QUOTATION_MARK,
 	LEPT_PARSE_INVALID_STRING_ESCAPE,
 	LEPT_PARSE_INVALID_STRING_CHAR,
+	LEPT_PARSE_INVALID_UNICODE_HEX,
+	LEPT_PARSE_INVALID_UNICODE_SURROGATE,
+	LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET,
 };
 
-typedef struct {
+typedef struct lept_value lept_value;
+// 由于 lept_value 内使用了自身类型的指针，我们必须前向声明（forward declare）此类型
+struct lept_value {
 	union {
+		struct {
+			lept_value *e;
+			size_t size; // size 是元素的个数，不是字节单位
+		}arr; 
 		struct {
 			char *s;
 			size_t len;
@@ -25,7 +34,7 @@ typedef struct {
 		double n;
 	}u; //  C11 新增了匿名 struct/union 语法,可以省略u
 	lept_type type;
-}lept_value;
+};
 
 #define lept_set_void(v) lept_free(v)
 
@@ -35,7 +44,7 @@ typedef struct {
 } while(0)
 
 int lept_get_type(const lept_value *);
-int lept_parse(lept_value *, const char *);
+int lept_parse(lept_value *, char *);
 double lept_get_number(const lept_value *);
 void lept_set_string(lept_value *v, const char *, size_t);
 void lept_free(lept_value *);
@@ -46,5 +55,7 @@ double lept_get_double(const lept_value *);
 const char* lept_get_string(const lept_value *);
 size_t lept_get_len(const lept_value *);
 void lept_set_null(lept_value *);
+size_t lept_get_array_size(const lept_value *);
+lept_value *lept_get_array_element(const lept_value *, size_t);
 
 #endif

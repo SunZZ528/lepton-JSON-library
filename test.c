@@ -1,4 +1,10 @@
-﻿#include <stdio.h>
+﻿#define _WINDOWS
+#ifdef _WINDOWS
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "leptjson.h"
@@ -24,6 +30,7 @@ static void test_access_boolean();
 static void test_access_number();
 static void test_parse_string();
 static void test_access_void();
+static void test_parse_array();
 
 //  !!attention: there must no whitespace between BASE and (
 //  在define定义的\ 后不能添加//注释符 且 \ 后面不能有多余空格
@@ -77,6 +84,51 @@ static void test_access_void();
 		EXPECT_EQ_STRING(expect, lept_get_string(&v), lept_get_len(&v));\
         lept_free(&v);\
 }while(0)
+
+#if defined(_MSC_VER)
+#define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%Iu")
+#else
+#define EXPECT_EQ_SIZE_T(expect, actual) EXPECT_EQ_BASE((expect) == (actual), (size_t)expect, (size_t)actual, "%zu")
+#endif
+
+static void test_parse_array() {
+	size_t i, j;
+	lept_value v;
+	lept_init(&v);
+	EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ ]"));
+	EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v)); 
+	EXPECT_EQ_INT(0, lept_get_array_size(&v));
+	lept_free(&v);
+
+	lept_init(&v);
+	EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[null , false , true , 123 , \"abc\"]"));
+	EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+	EXPECT_EQ_INT(5, lept_get_array_size(&v));
+	EXPECT_EQ_INT(LEPT_NULL, lept_get_type(lept_get_array_element(&v, 0)));
+	EXPECT_EQ_INT(LEPT_FALSE, lept_get_type(lept_get_array_element(&v, 1)));
+	EXPECT_EQ_INT(LEPT_TRUE, lept_get_type(lept_get_array_element(&v, 2)));
+	EXPECT_EQ_INT(LEPT_NUMBER, lept_get_type(lept_get_array_element(&v, 3)));
+	EXPECT_EQ_INT(LEPT_STRING, lept_get_type(lept_get_array_element(&v, 4)));
+	EXPECT_EQ_DOUBLE(123.0, lept_get_number(lept_get_array_element(&v, 3)));
+	EXPECT_EQ_STRING("abc", lept_get_string(lept_get_array_element(&v, 4)), lept_get_len(lept_get_array_element(&v, 4)));
+	lept_free(&v);
+
+	lept_init(&v);
+	EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"));
+	EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+	EXPECT_EQ_SIZE_T(4, lept_get_array_size(&v));
+	for (i = 0; i < 4; i++) {
+		lept_value* a = lept_get_array_element(&v, i);
+		EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(a));
+		EXPECT_EQ_SIZE_T(i, lept_get_array_size(a));
+		for (j = 0; j < i; j++) {
+			lept_value* e = lept_get_array_element(a, j);
+			EXPECT_EQ_INT(LEPT_NUMBER, lept_get_type(e));
+			EXPECT_EQ_DOUBLE((double)j, lept_get_number(e));
+		}
+	}
+	lept_free(&v);
+}
 
 static void test_parse_null() {
 	EXPECT_TEST_ERROR(LEPT_PARSE_OK, "null", LEPT_NULL);
@@ -192,6 +244,7 @@ static void test_parse() {
 	test_access_boolean();
 	test_access_number();
 	test_access_string();
+	test_parse_array();
 }
 
 static void test_access_null() {
@@ -247,6 +300,12 @@ static void test_parse_string() {
 	EXPECT_TEST_STRING("Hello", "\"Hello\"");
 	EXPECT_TEST_STRING("Hello\nWorld", "\"Hello\\nWorld\"");
 	EXPECT_TEST_STRING("\" \\ / \b \f \n \r \t", "\"\\\" \\\\ \\/ \\b \\f \\n \\r \\t\"");
+	EXPECT_TEST_STRING("Hello\0World", "\"Hello\\u0000World\"");
+	EXPECT_TEST_STRING("\x24", "\"\\u0024\"");         /* Dollar sign U+0024 */
+	EXPECT_TEST_STRING("\xC2\xA2", "\"\\u00A2\"");     /* Cents sign U+00A2 */
+	EXPECT_TEST_STRING("\xE2\x82\xAC", "\"\\u20AC\""); /* Euro sign U+20AC */
+	EXPECT_TEST_STRING("\xF0\x9D\x84\x9E", "\"\\uD834\\uDD1E\"");  /* G clef sign U+1D11E */
+	EXPECT_TEST_STRING("\xF0\x9D\x84\x9E", "\"\\ud834\\udd1e\"");  /* G clef sign U+1D11E */
 }
 
 static void test_parse_missing_quotation_mark() {
@@ -266,6 +325,9 @@ static void test_parse_invalid_string_char() {
 	EXPECT_TEST_ERROR(LEPT_PARSE_INVALID_STRING_CHAR, "\"\x1F\"", LEPT_VOID);
 }
 int main() {
+#ifdef _WINDOWS
+	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 	test_parse();
 	printf("%d/%d (%3.2f%%) passed!\n", test_pass, test_count, test_pass * 100.0 / test_count);
 	getchar();
