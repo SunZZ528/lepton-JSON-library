@@ -26,10 +26,9 @@ static void *lept_context_pop(lept_context *, size_t);
 static int lept_parse_string(lept_context *, lept_value *);
 static char *lept_parse_hex4(char *, unsigned *);
 static int lept_encode_utf8(lept_context *, const unsigned);
-<<<<<<< HEAD
 static int lept_parse_array(lept_context *, lept_value *);
-=======
->>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
+static int lept_parse_string_raw(lept_context *, char **, size_t *);
+static int lept_parse_object(lept_context *, lept_value *);
 
 #define EXPECT(c, ch) \
 	do { \
@@ -96,6 +95,7 @@ static int lept_parse_value(lept_context *c, lept_value *v) {
 		case '\0': return LEPT_PARSE_EXPECT_VALUE;
 		case '\"': return lept_parse_string(c, v);
 		case '[': return lept_parse_array(c, v);
+		case '{': return lept_parse_objext(c, v);
 		default: return lept_parse_number(c, v);
 	}
 }
@@ -251,60 +251,67 @@ static void *lept_context_pop(lept_context *c, size_t size) {
 }
 
 static int lept_parse_string(lept_context *c, lept_value *v) {
-	size_t head = c->top, len;
-<<<<<<< HEAD
+	int ret;
+	size_t len;
+	char *s;
+	if ((ret = lept_parse_string_raw(c, &s, &len)) == LEPT_PARSE_OK)
+		lept_set_string(v, s, len);
+	return ret;
+}
+/* 解析 JSON 字符串，把结果写入 str 和 len */
+/* str 指向 c->stack 中的元素，需要在 c->stack  */
+static int lept_parse_string_raw(lept_context *c, char **str, size_t *size) {
+	size_t head = c->top;
 	char *p;
-=======
-	const char *p;
->>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
 	unsigned u, u_low;
 	EXPECT(c, '\"');
 	p = c->json;
 	while (1) {
 		char ch = *p++;
 		switch (ch) {
-			case '\"':
-				len = c->top - head;
-				lept_set_string(v, (const char *)lept_context_pop(c, len), len);
-				c->json = p;
-				return LEPT_PARSE_OK;
-			case '\0':
-				STRING_ERROR(LEPT_PARSE_MISS_QUOTATION_MARK);
-			case '\\':
-				switch (*p++) {
-					case '\"': PUTC(c, '\"'); break;
-					case '\\': PUTC(c, '\\'); break;
-					case '/':  PUTC(c, '/'); break;
-					case 'b':  PUTC(c, '\b'); break;
-					case 'f':  PUTC(c, '\f'); break;
-					case 'n':  PUTC(c, '\n'); break;
-					case 'r':  PUTC(c, '\r'); break;
-					case 't':  PUTC(c, '\t'); break;
-					case 'u':  
-						if(!(p = lept_parse_hex4(p, &u)))
-							STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
-						if (u >= 0xD800 && u <= 0xD8FF) {
-							if (*p++ != '\\')
-								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
-							if(*p++ != 'u')
-								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
-							if (!(p = lept_parse_hex4(p, &u_low)))
-								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
-							if (u_low < 0xDC00 || u_low > 0xDFFF)
-								STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
-							u = 0x10000 + (u - 0xD800) * 0x400 + (u_low - 0xDC00);
-						}
-						lept_encode_utf8(c, u);
-						break;
-					default: 
-						STRING_ERROR(LEPT_PARSE_INVALID_STRING_ESCAPE);
+		case '\"':
+			*size = c->top - head;
+			//lept_set_string(v, (const char *)lept_context_pop(c, len), len);
+			*str = (char *)lept_context_pop(c, *size);
+			c->json = p;
+			return LEPT_PARSE_OK;
+		case '\0':
+			STRING_ERROR(LEPT_PARSE_MISS_QUOTATION_MARK);
+		case '\\':
+			switch (*p++) {
+			case '\"': PUTC(c, '\"'); break;
+			case '\\': PUTC(c, '\\'); break;
+			case '/':  PUTC(c, '/'); break;
+			case 'b':  PUTC(c, '\b'); break;
+			case 'f':  PUTC(c, '\f'); break;
+			case 'n':  PUTC(c, '\n'); break;
+			case 'r':  PUTC(c, '\r'); break;
+			case 't':  PUTC(c, '\t'); break;
+			case 'u':
+				if (!(p = lept_parse_hex4(p, &u)))
+					STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+				if (u >= 0xD800 && u <= 0xD8FF) {
+					if (*p++ != '\\')
+						STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+					if (*p++ != 'u')
+						STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+					if (!(p = lept_parse_hex4(p, &u_low)))
+						STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+					if (u_low < 0xDC00 || u_low > 0xDFFF)
+						STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+					u = 0x10000 + (u - 0xD800) * 0x400 + (u_low - 0xDC00);
 				}
+				lept_encode_utf8(c, u);
 				break;
 			default:
-				if ((unsigned char)ch < 0x20) {
-					STRING_ERROR(LEPT_PARSE_INVALID_STRING_CHAR);
-				}
-				PUTC(c, ch);
+				STRING_ERROR(LEPT_PARSE_INVALID_STRING_ESCAPE);
+			}
+			break;
+		default:
+			if ((unsigned char)ch < 0x20) {
+				STRING_ERROR(LEPT_PARSE_INVALID_STRING_CHAR);
+			}
+			PUTC(c, ch);
 		}
 	}
 }
@@ -333,7 +340,6 @@ int lept_encode_utf8(lept_context *c, const unsigned u) {
 	return LEPT_PARSE_OK;
 }
 
-<<<<<<< HEAD
 size_t lept_get_array_size(const lept_value *v) {
 	assert(v != NULL && v->type == LEPT_ARRAY);
 	return v->u.arr.size;
@@ -345,8 +351,6 @@ lept_value * lept_get_array_element(const lept_value *v, size_t n) {
 	return &v->u.arr.e[n];
 }
 
-=======
->>>>>>> 1cc8a6e3d2438f81a10bd51f19f35c9b1abeb35e
 char *lept_parse_hex4(char *p, unsigned *u) {
 	size_t i;
 	*u = 0x00;
@@ -362,9 +366,9 @@ char *lept_parse_hex4(char *p, unsigned *u) {
 			else if (*(p + i) >= 'a' && *(p + i) <= 'f')  *u += *(p + i) - ('a' - 10);
 /* 如果使用strtol
 static const char* lept_parse_hex4(const char* p, unsigned* u) {
-    char* end;
-    *u = (unsigned)strtol(p, &end, 16);
-    return end == p + 4 ? end : NULL;
+	char* end;
+	*u = (unsigned)strtol(p, &end, 16);
+	return end == p + 4 ? end : NULL;
 }
 但这个实现会错误地接受 "\u 123" 这种不合法的 JSON，
 因为 strtol() 会跳过开始的空白。要解决的话，还需要检测第一个字符是否 [0-9A-Fa-f]，或者 !isspace(*p)*/
@@ -441,3 +445,42 @@ lept_context* c, const void* data, size_t size);
 例如在把字符串值转化（stringify）为 JSON 时，我们可以预先在堆栈分配字符串所需的最大空间，而当时是未有数据填充进去的。
 无论如何，我们编程时都要考虑清楚变量的生命周期，特别是指针的生命周期。
 */
+
+static int lept_parse_object(lept_context *c, lept_value *v) {
+	size_t size;
+	lept_member m;
+	int ret;
+	EXPECT(c, '{');
+	lept_parse_whitespace(c);
+	if (*c->json == '}') {
+		c->json++;
+		v->type = LEPT_OBJECT;
+		v->u.o.m = 0;
+		v->u.o.size = 0;
+		return LEPT_PARSE_OK;
+	}
+	m.k = NULL;
+	size = 0;
+	while (1) {
+		lept_init(&m.v);
+		lept_parse_whitespace(c);
+		if ((ret = lept_parse_string(c, &m.v)) != LEPT_PARSE_OK) {
+			break;
+		}
+		if (*c->json != ':') {
+
+		}
+		c->json++;
+
+		//
+		if ((ret = lept_parse_value(c, &m.v)) != LEPT_PARSE_OK) {
+			break;
+		}
+		memcpy(lept_context_push(c, sizeof(lept_member)), &m, sizeof(lept_member));
+		size++;
+		m.k = NULL;
+		// 
+	}
+	//
+	return ret;
+}
