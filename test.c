@@ -31,6 +31,9 @@ static void test_access_number();
 static void test_parse_string();
 static void test_access_void();
 static void test_parse_array();
+static void test_parse_miss_key();
+static void test_parse_miss_colon();
+static void test_parse_miss_comma_or_curly_bracket();
 
 //  !!attention: there must no whitespace between BASE and (
 //  在define定义的\ 后不能添加//注释符 且 \ 后面不能有多余空格
@@ -228,6 +231,7 @@ static void test_parse_number_too_big() {
 }
 
 static void test_parse() {
+	test_access_void();
 	test_parse_null();
 	test_parse_true();
 	test_parse_false();
@@ -245,6 +249,9 @@ static void test_parse() {
 	test_access_number();
 	test_access_string();
 	test_parse_array();
+	test_parse_miss_key();
+	test_parse_miss_colon();
+	test_parse_miss_comma_or_curly_bracket();
 }
 
 static void test_access_null() {
