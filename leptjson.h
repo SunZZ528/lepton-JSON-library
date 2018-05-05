@@ -77,5 +77,8 @@ size_t lept_get_object_size(const lept_value *);
 const char *lept_get_object_key(const lept_value *, size_t);
 size_t letp_get_objext_len(const lept_value *, size_t);
 lept_value *lept_get_objext_value(const lept_value *, size_t);
+const char *lept_get_object_key(const lept_value *, const size_t);
+const size_t lept_get_object_key_len(const lept_value *, const size_t);
+const lept_value *lept_get_object_value(const lept_value *, const size_t);
 
 #endif

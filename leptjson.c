@@ -519,3 +519,23 @@ static int lept_parse_object(lept_context *c, lept_value *v) {
 	v->type = LEPT_VOID;
 	return ret;
 }
+
+size_t lept_get_object_size(const lept_value *v) {
+	assert(v != NULL && v->type == LEPT_OBJECT);
+	return v->u.o.size;
+}
+
+const char *lept_get_object_key(const lept_value *v, const size_t size) {
+	assert(v != NULL && v->type == LEPT_OBJECT && size <= v->u.o.size);
+	return v->u.o.m[size].k;
+}
+
+const size_t lept_get_object_key_len(const lept_value *v, const size_t size) {
+	assert(v != NULL && v->type == LEPT_OBJECT && size <= v->u.o.size);
+	return v->u.o.m[size].klen;
+}
+
+const lept_value *lept_get_object_value(const lept_value *v, const size_t size) {
+	assert(v != NULL && v->type == LEPT_OBJECT && size <= v->u.o.size);
+	return &v->u.o.m[size].v;
+}
