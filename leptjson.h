@@ -20,6 +20,7 @@ enum {
 	LEPT_PARSE_MISS_KEY,
 	LEPT_PARSE_MISS_COLON,
 	LEPT_PARSE_MISS_COMMA_OR_CURLY_BRACKET,
+	LEPT_STRINGIFY_OK,
 };
 
 typedef struct lept_value lept_value;
@@ -80,5 +81,6 @@ lept_value *lept_get_objext_value(const lept_value *, size_t);
 const char *lept_get_object_key(const lept_value *, const size_t);
 const size_t lept_get_object_key_len(const lept_value *, const size_t);
 const lept_value *lept_get_object_value(const lept_value *, const size_t);
+int lept_stringify(const lept_value *,char **, size_t *length);
 
 #endif
